@@ -129,17 +129,27 @@
         .form-group { display: flex; flex-direction: column; gap: 6px; }
         .form-group label { font-size: 0.8rem; color: #aaa; font-weight: 600; }
 
-        input[type="text"], select {
+        input[type="text"], select, textarea {
             width: 100%; background: var(--input-bg); border: 1px solid #444; color: #fff;
             padding: 12px; border-radius: 8px; font-size: 16px; outline: none; transition: 0.3s; -webkit-appearance: none;
         }
+        textarea { resize: vertical; min-height: 80px; font-family: inherit; }
 
         /* ----- 이미지 관련 ----- */
-        .file-label { display: inline-block; text-align: center; padding: 12px; background: #2a2a2a; border: 1px dashed #555; color: #ccc; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
+        .file-label { display: inline-block; text-align: center; padding: 12px; background: #2a2a2a; border: 1px dashed #555; color: #ccc; border-radius: 8px; cursor: pointer; font-size: 0.9rem; width: 100%; }
         input[type="file"] { display: none; }
 
         .image-preview-box { width: 100%; max-height: 350px; overflow: hidden; border-radius: 8px; display: none; border: 1px solid #333; background: #000; text-align: center; margin-top: 5px; }
         .image-preview-box img { width: 100%; height: 100%; object-fit: contain; }
+
+        /* ----- 제보 모음 동적 추가 레이아웃 ----- */
+        .report-dynamic-container { display: flex; flex-direction: column; gap: 10px; }
+        .report-row { display: flex; gap: 8px; align-items: flex-start; }
+        .report-row .file-label { flex: 1; }
+        
+        .btn-mini { padding: 12px 15px; background: #222; border: 1px solid #444; color: #fff; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 16px; }
+        .btn-mini.add-report-btn { border-color: var(--primary-color); color: var(--primary-color); }
+        .btn-mini.del-report-btn { border-color: var(--danger-color); color: var(--danger-color); }
 
         /* ----- 버튼 ----- */
         .btn-add { width: 100%; padding: 16px; background: transparent; border: 2px dashed #444; color: #888; border-radius: 10px; cursor: pointer; font-size: 1rem; font-weight: bold; margin-top: 20px; transition: 0.3s; }
@@ -156,7 +166,6 @@
             .sidebar { position: relative; top: 0; max-height: 200px; padding: 15px; }
             .sidebar-section { margin-bottom: 15px; }
             .sidebar-section:last-child { margin-bottom: 0; }
-            .image-upload-grid { grid-template-columns: 1fr !important; gap: 15px !important; }
             .item-card { padding: 25px 12px 15px 12px; }
             .btn-delete { top: 8px; right: 12px; }
         }
@@ -222,36 +231,20 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
-    // 단방향 비밀번호 해시 암호화 엔진
-    async function sha256(message) {
-        const msgBuffer = new TextEncoder().encode(message);                    
-        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-
-    // [수정 핵심] 관리자 비번 검증 시스템 (0314 전용 오차 차단)
-    async function checkAdminPermission() {
-        // '0314scj' 가 단방향 해싱 결합된 문자열값 (구글 검색 크랙 완벽 우회 방지)
-        const secureHash = "e2b02844f23da760f38eb44df0e318df88ca6f734d0b04c0ec028a7e373413cf"; 
-        
+    // 0314 패스워드 판별기
+    function checkAdminPermission() {
         const userInput = prompt("관리자 비밀번호를 입력하세요:");
         if (!userInput) return false;
-
-        // 문자열 강제 결합 후 대조 가동
-        const saltedInput = userInput.trim() + "scj";
-        const inputHash = await sha256(saltedInput);
-
-        if (inputHash !== secureHash) {
+        if (userInput.trim() !== "0314") {
             alert("권한이 없습니다. 비밀번호가 틀렸습니다.");
             return false;
         }
         return true;
     }
 
-    // 항목 추가 핸들러 (Firestore에 저장)
-    async function verifyAndAdd(targetId, type) {
-        const isAdmin = await checkAdminPermission();
+    // 항목 추가 핸들러 (Firestore 백엔드 저장)
+    function verifyAndAdd(targetId, type) {
+        const isAdmin = checkAdminPermission();
         if (!isAdmin) return;
 
         const clubName = prompt("추가할 동아리 이름을 입력하세요:");
@@ -262,8 +255,8 @@
             type: type, 
             authStatus: "O",
             imgClub: "",
-            imgAuth: "",
-            imgReport: "",
+            evidenceText: "",
+            imgReports: [""], // 제보 이미지 다중 배열 초기화
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         }).then(() => {
             alert("성공적으로 저장 및 실시간 공유되었습니다.");
@@ -279,21 +272,34 @@
             document.getElementById('normalList').innerHTML = '';
 
             snapshot.forEach((doc) => {
-                const data = doc.data();
-                const id = doc.id;
-                renderCard(id, data);
+                renderCard(doc.id, doc.data());
             });
             updateSidebar();
         });
     }
 
-    // 카드 내부 렌더링 시스템
+    // 카드 내부 개편 레이아웃 적용 렌더링 시스템
     function renderCard(docId, data) {
         const containerId = data.type === 'scj' ? 'scjList' : 'normalList';
         const container = document.getElementById(containerId);
         const newCard = document.createElement('div');
         newCard.className = 'item-card';
         newCard.id = docId;
+
+        // 제보 모음 배열 렌더링 처리
+        const reportsArr = data.imgReports && data.imgReports.length > 0 ? data.imgReports : [""];
+        let reportsHTML = "";
+        reportsArr.forEach((imgSrc, idx) => {
+            reportsHTML += `
+                <div class="report-row" data-index="${idx}">
+                    <label class="file-label">📷 제보 이미지 선택
+                        <input type="file" accept="image/*" onchange="uploadMultiImageProcess('${docId}', ${idx}, this)">
+                    </label>
+                    ${idx === 0 ? `<button class="btn-mini add-report-btn" onclick="addReportRowField('${docId}')">+</button>` : `<button class="btn-mini del-report-btn" onclick="delReportRowField('${docId}', ${idx})">X</button>`}
+                    <div class="image-preview-box" style="${imgSrc ? 'display:block;' : ''}"><img src="${imgSrc || ''}" alt="제보미리보기"></div>
+                </div>
+            `;
+        });
 
         newCard.innerHTML = `
             <button class="btn-delete" onclick="deleteCard('${docId}')">삭제</button>
@@ -303,27 +309,25 @@
                     <input type="text" class="club-name-input" value="${data.name}" onchange="updateField('${docId}', 'name', this.value)">
                 </div>
                 <div class="form-group">
-                    <label>인증 유무</label>
+                    <label>신상 인증 유무</label>
                     <select onchange="updateField('${docId}', 'authStatus', this.value)">
                         <option value="O" ${data.authStatus === 'O' ? 'selected' : ''}>⭕ 인증 완료 (확인됨)</option>
                         <option value="X" ${data.authStatus === 'X' ? 'selected' : ''}>❌ 미인증 / 확인 필요</option>
                     </select>
                 </div>
-                <div class="form-grid image-upload-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px;">
-                    <div class="form-group">
-                        <label>동아리 글 (휴대폰 캡쳐)</label>
-                        <label class="file-label">📷 이미지 선택<input type="file" accept="image/*" onchange="uploadImageProcess('${docId}', 'imgClub', this)"></label>
-                        <div class="image-preview-box" style="${data.imgClub ? 'display:block;' : ''}"><img src="${data.imgClub || ''}" alt="미리보기"></div>
-                    </div>
-                    <div class="form-group">
-                        <label>인증 사진</label>
-                        <label class="file-label">📷 이미지 선택<input type="file" accept="image/*" onchange="uploadImageProcess('${docId}', 'imgAuth', this)"></label>
-                        <div class="image-preview-box" style="${data.imgAuth ? 'display:block;' : ''}"><img src="${data.imgAuth || ''}" alt="미리보기"></div>
-                    </div>
-                    <div class="form-group">
-                        <label>제보 모음</label>
-                        <label class="file-label">📷 이미지 선택<input type="file" accept="image/*" onchange="uploadImageProcess('${docId}', 'imgReport', this)"></label>
-                        <div class="image-preview-box" style="${data.imgReport ? 'display:block;' : ''}"><img src="${data.imgReport || ''}" alt="미리보기"></div>
+                <div class="form-group">
+                    <label>동아리 글 (휴대폰 캡쳐)</label>
+                    <label class="file-label">📷 이미지 선택<input type="file" accept="image/*" onchange="uploadImageProcess('${docId}', 'imgClub', this)"></label>
+                    <div class="image-preview-box" style="${data.imgClub ? 'display:block;' : ''}"><img src="${data.imgClub || ''}" alt="미리보기"></div>
+                </div>
+                <div class="form-group">
+                    <label>박제 근거 (텍스트 입력)</label>
+                    <textarea placeholder="박제하게 된 세부 사유 및 근거 텍스트를 적어주세요" onchange="updateField('${docId}', 'evidenceText', this.value)">${data.evidenceText || ''}</textarea>
+                </div>
+                <div class="form-group">
+                    <label>제보 모음 (사진 추가)</label>
+                    <div class="report-dynamic-container">
+                        ${reportsHTML}
                     </div>
                 </div>
             </div>
@@ -331,7 +335,7 @@
         container.appendChild(newCard);
     }
 
-    async function updateField(docId, field, value) {
+    function updateField(docId, field, value) {
         db.collection("clubs").doc(docId).update({ [field]: value });
     }
 
@@ -341,14 +345,53 @@
 
         const reader = new FileReader();
         reader.onload = function(e) {
-            const base64String = e.target.result;
-            db.collection("clubs").doc(docId).update({ [field]: base64String });
+            db.collection("clubs").doc(docId).update({ [field]: e.target.result });
         }
         reader.readAsDataURL(file);
     }
 
-    async function deleteCard(docId) {
-        const isAdmin = await checkAdminPermission();
+    // 제보 모음 '+' 누를 때 신규 이미지 업로드 배열 칸 추가
+    function addReportRowField(docId) {
+        db.collection("clubs").doc(docId).get().then((doc) => {
+            if(doc.exists) {
+                let currentReports = doc.data().imgReports || [""];
+                currentReports.push(""); // 새 빈칸 추가
+                db.collection("clubs").doc(docId).update({ imgReports: currentReports });
+            }
+        });
+    }
+
+    // 제보 모음 'X' 누를 때 해당 이미지 칸 삭제
+    function delReportRowField(docId, index) {
+        db.collection("clubs").doc(docId).get().then((doc) => {
+            if(doc.exists) {
+                let currentReports = doc.data().imgReports || [""];
+                currentReports.splice(index, 1);
+                db.collection("clubs").doc(docId).update({ imgReports: currentReports });
+            }
+        });
+    }
+
+    // 다중 이미지 배열 처리용 변환 엔진
+    function uploadMultiImageProcess(docId, index, input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            db.collection("clubs").doc(docId).get().then((doc) => {
+                if(doc.exists) {
+                    let currentReports = doc.data().imgReports || [""];
+                    currentReports[index] = e.target.result; // 지정 위치에 스토리지화 데이터 교체
+                    db.collection("clubs").doc(docId).update({ imgReports: currentReports });
+                }
+            });
+        }
+        reader.readAsDataURL(file);
+    }
+
+    function deleteCard(docId) {
+        const isAdmin = checkAdminPermission();
         if (!isAdmin) return;
         
         if(confirm("정말로 이 데이터를 아카이브에서 삭제하시겠습니까?")) {
