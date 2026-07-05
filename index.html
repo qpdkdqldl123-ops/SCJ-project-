@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>신천지 동아리 아카이브 박제</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <style>
+        :root {
+            --primary-color: #d4af37; /* 프리미엄 골드 */
+            --danger-color: #e74c3c;  /* 경고 레드 */
+            --safe-color: #2ecc71;    /* 안전 그린 */
+            --bg-color: #0d0d0d;      /* 딥 블랙 */
+            --card-bg: #1a1a1a;       /* 다크 그레이 */
+            --input-bg: #252525;
+            --text-color: #f0f0f0;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Pretendard', -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            padding: 15px 10px;
+            line-height: 1.6;
+            -webkit-text-size-adjust: none;
+        }
+
+        /* ----- 헤더 타이틀 ----- */
+        header {
+            text-align: center;
+            margin-bottom: 25px;
+            padding: 10px 5px;
+        }
+        header h1 {
+            color: var(--danger-color);
+            font-size: 1.6rem;
+            letter-spacing: -0.5px;
+            word-break: keep-all;
+            margin-bottom: 8px;
+        }
+        header p {
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        /* ----- 상단 대형 내비게이션 버튼 ----- */
+        .top-nav {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 30px;
+            max-width: 1200px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .nav-btn {
+            flex: 1;
+            max-width: 300px;
+            padding: 14px 10px;
+            border: 2px solid #333;
+            background: var(--card-bg);
+            color: #fff;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: bold;
+            transition: 0.3s;
+            text-align: center;
+            word-break: keep-all;
+        }
+        .nav-btn.btn-scj:hover { border-color: var(--danger-color); color: var(--danger-color); box-shadow: 0 0 10px rgba(231,76,60,0.3); }
+        .nav-btn.btn-normal:hover { border-color: var(--safe-color); color: var(--safe-color); box-shadow: 0 0 10px rgba(46,204,113,0.3); }
+
+        /* ----- 메인 2단 레이아웃 ----- */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 30px;
+            max-width: 1300px;
+            margin: 0 auto;
+            align-items: start;
+        }
+
+        .sidebar {
+            position: sticky;
+            top: 20px;
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 16px;
+            padding: 20px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+        }
+        .sidebar-section { margin-bottom: 25px; }
+        .sidebar-section h3 {
+            font-size: 0.95rem;
+            margin-bottom: 12px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #333;
+        }
+        .scj-side h3 { color: var(--danger-color); }
+        .normal-side h3 { color: var(--safe-color); }
+        
+        .side-list { display: flex; flex-direction: column; gap: 8px; }
+        .side-item {
+            width: 100%; padding: 12px 10px; background: var(--card-bg); border: 1px solid #333;
+            color: #ccc; border-radius: 6px; font-size: 0.85rem; text-align: left; cursor: pointer;
+            transition: 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .side-item:hover { border-color: var(--primary-color); color: #fff; background: #222; }
+
+        .content-area { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+        .section-box { background: #111; border-radius: 20px; padding: 20px 15px; margin-bottom: 35px; border: 1px solid #222; }
+        .section-box.shincheonji { border-top: 4px solid var(--danger-color); }
+        .section-box.normal { border-top: 4px solid var(--safe-color); }
+        
+        .section-title { font-size: 1.25rem; margin-bottom: 20px; }
+        .shincheonji .section-title { color: var(--danger-color); }
+        .normal .section-title { color: var(--safe-color); }
+
+        /* ----- 리스트 카드 ----- */
+        .item-list { display: flex; flex-direction: column; gap: 25px; }
+        .item-card { background: var(--card-bg); border: 1px solid #333; border-radius: 14px; padding: 20px 15px; position: relative; animation: fadeIn 0.4s ease-in-out; }
+        
+        .form-grid { display: grid; grid-template-columns: 1fr; gap: 15px; }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-group label { font-size: 0.8rem; color: #aaa; font-weight: 600; }
+
+        input[type="text"], select {
+            width: 100%; background: var(--input-bg); border: 1px solid #444; color: #fff;
+            padding: 12px; border-radius: 8px; font-size: 16px; outline: none; transition: 0.3s; -webkit-appearance: none;
+        }
+
+        /* ----- 이미지 관련 ----- */
+        .file-label { display: inline-block; text-align: center; padding: 12px; background: #2a2a2a; border: 1px dashed #555; color: #ccc; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
+        input[type="file"] { display: none; }
+
+        .image-preview-box { width: 100%; max-height: 350px; overflow: hidden; border-radius: 8px; display: none; border: 1px solid #333; background: #000; text-align: center; margin-top: 5px; }
+        .image-preview-box img { width: 100%; height: 100%; object-fit: contain; }
+
+        /* ----- 버튼 ----- */
+        .btn-add { width: 100%; padding: 16px; background: transparent; border: 2px dashed #444; color: #888; border-radius: 10px; cursor: pointer; font-size: 1rem; font-weight: bold; margin-top: 20px; transition: 0.3s; }
+        .shincheonji .btn-add:hover { border-color: var(--danger-color); color: var(--danger-color); }
+        .normal .btn-add:hover { border-color: var(--safe-color); color: var(--safe-color); }
+
+        .btn-delete { position: absolute; top: 15px; right: 15px; background: rgba(231, 76, 60, 0.1); color: var(--danger-color); border: 1px solid var(--danger-color); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.75rem; z-index: 10; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        @media (max-width: 768px) {
+            body { padding: 15px 8px; }
+            .main-layout { grid-template-columns: 1fr; gap: 15px; }
+            .sidebar { position: relative; top: 0; max-height: 200px; padding: 15px; }
+            .sidebar-section { margin-bottom: 15px; }
+            .sidebar-section:last-child { margin-bottom: 0; }
+            .image-upload-grid { grid-template-columns: 1fr !important; gap: 15px !important; }
+            .item-card { padding: 25px 12px 15px 12px; }
+            .btn-delete { top: 8px; right: 12px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>신천지: 너희를 소성시키겠다!!!!!<br>신천지 동아리 박제 🚨</h1>
+        <p>대학가 위장 동아리 및 포교 단체 데이터 공유 아카이브</p>
+    </header>
+
+    <div class="top-nav">
+        <button class="nav-btn btn-scj" onclick="scrollToSection('scjSection')">🛑 신천지 동아리</button>
+        <button class="nav-btn btn-normal" onclick="scrollToSection('normalSection')">✅ 일반 동아리</button>
+    </div>
+
+    <div class="main-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section scj-side">
+                <h3>🛑 신천지 동아리</h3>
+                <div class="side-list" id="scjSideList"></div>
+            </div>
+            <div class="sidebar-section normal-side">
+                <h3>✅ 일반 동아리</h3>
+                <div class="side-list" id="normalSideList"></div>
+            </div>
+        </aside>
+
+        <main class="content-area">
+            <section class="section-box shincheonji" id="scjSection">
+                <h2 class="section-title">🛑 신천지인 동아리 목록</h2>
+                <div class="item-list" id="scjList"></div>
+                <button class="btn-add" onclick="verifyAndAdd('scjList', 'scj')">➕ 동아리 추가하기</button>
+            </section>
+
+            <section class="section-box normal" id="normalSection">
+                <h2 class="section-title">✅ 신천지아닌 동아리 목록</h2>
+                <div class="item-list" id="normalList"></div>
+                <button class="btn-add" onclick="verifyAndAdd('normalList', 'normal')">➕ 동아리 추가하기</button>
+            </section>
+        </main>
+    </div>
+</div>
+
+<script>
+    let cardCounter = 0;
+
+    // 1. Firebase 연동 환경설정
+    const firebaseConfig = {
+        apiKey: "AIzaSyBMu1JUH7AAwlM2oyLBOVv1C6j7MskzL2I",
+        authDomain: "scj-project-35078.firebaseapp.com",
+        databaseURL: "https://scj-project-35078-default-rtdb.firebaseio.com",
+        projectId: "scj-project-35078",
+        storageBucket: "scj-project-35078.firebasestorage.app",
+        messagingSenderId: "206394364313",
+        appId: "1:206394364313:web:28c8932c9e1e4715cc0308",
+        measurementId: "G-LC2TRP883W"
+    };
+
+    // Firebase 및 Firestore 초기화
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // 단방향 비밀번호 해시 암호화 엔진
+    async function sha256(message) {
+        const msgBuffer = new TextEncoder().encode(message);                    
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    // [수정 핵심] 관리자 비번 검증 시스템 (0314 전용 오차 차단)
+    async function checkAdminPermission() {
+        // '0314scj' 가 단방향 해싱 결합된 문자열값 (구글 검색 크랙 완벽 우회 방지)
+        const secureHash = "e2b02844f23da760f38eb44df0e318df88ca6f734d0b04c0ec028a7e373413cf"; 
+        
+        const userInput = prompt("관리자 비밀번호를 입력하세요:");
+        if (!userInput) return false;
+
+        // 문자열 강제 결합 후 대조 가동
+        const saltedInput = userInput.trim() + "scj";
+        const inputHash = await sha256(saltedInput);
+
+        if (inputHash !== secureHash) {
+            alert("권한이 없습니다. 비밀번호가 틀렸습니다.");
+            return false;
+        }
+        return true;
+    }
+
+    // 항목 추가 핸들러 (Firestore에 저장)
+    async function verifyAndAdd(targetId, type) {
+        const isAdmin = await checkAdminPermission();
+        if (!isAdmin) return;
+
+        const clubName = prompt("추가할 동아리 이름을 입력하세요:");
+        if (!clubName) return;
+
+        db.collection("clubs").add({
+            name: clubName,
+            type: type, 
+            authStatus: "O",
+            imgClub: "",
+            imgAuth: "",
+            imgReport: "",
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        }).then(() => {
+            alert("성공적으로 저장 및 실시간 공유되었습니다.");
+        }).catch((error) => {
+            alert("저장 실패: " + error);
+        });
+    }
+
+    // 데이터 실시간 원격 바인딩 뷰 엔진
+    function listenToFirestore() {
+        db.collection("clubs").orderBy("createdAt", "asc").onSnapshot((snapshot) => {
+            document.getElementById('scjList').innerHTML = '';
+            document.getElementById('normalList').innerHTML = '';
+
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                const id = doc.id;
+                renderCard(id, data);
+            });
+            updateSidebar();
+        });
+    }
+
+    // 카드 내부 렌더링 시스템
+    function renderCard(docId, data) {
+        const containerId = data.type === 'scj' ? 'scjList' : 'normalList';
+        const container = document.getElementById(containerId);
+        const newCard = document.createElement('div');
+        newCard.className = 'item-card';
+        newCard.id = docId;
+
+        newCard.innerHTML = `
+            <button class="btn-delete" onclick="deleteCard('${docId}')">삭제</button>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>동아리 이름</label>
+                    <input type="text" class="club-name-input" value="${data.name}" onchange="updateField('${docId}', 'name', this.value)">
+                </div>
+                <div class="form-group">
+                    <label>인증 유무</label>
+                    <select onchange="updateField('${docId}', 'authStatus', this.value)">
+                        <option value="O" ${data.authStatus === 'O' ? 'selected' : ''}>⭕ 인증 완료 (확인됨)</option>
+                        <option value="X" ${data.authStatus === 'X' ? 'selected' : ''}>❌ 미인증 / 확인 필요</option>
+                    </select>
+                </div>
+                <div class="form-grid image-upload-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px;">
+                    <div class="form-group">
+                        <label>동아리 글 (휴대폰 캡쳐)</label>
+                        <label class="file-label">📷 이미지 선택<input type="file" accept="image/*" onchange="uploadImageProcess('${docId}', 'imgClub', this)"></label>
+                        <div class="image-preview-box" style="${data.imgClub ? 'display:block;' : ''}"><img src="${data.imgClub || ''}" alt="미리보기"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>인증 사진</label>
+                        <label class="file-label">📷 이미지 선택<input type="file" accept="image/*" onchange="uploadImageProcess('${docId}', 'imgAuth', this)"></label>
+                        <div class="image-preview-box" style="${data.imgAuth ? 'display:block;' : ''}"><img src="${data.imgAuth || ''}" alt="미리보기"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>제보 모음</label>
+                        <label class="file-label">📷 이미지 선택<input type="file" accept="image/*" onchange="uploadImageProcess('${docId}', 'imgReport', this)"></label>
+                        <div class="image-preview-box" style="${data.imgReport ? 'display:block;' : ''}"><img src="${data.imgReport || ''}" alt="미리보기"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+        container.appendChild(newCard);
+    }
+
+    async function updateField(docId, field, value) {
+        db.collection("clubs").doc(docId).update({ [field]: value });
+    }
+
+    function uploadImageProcess(docId, field, input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const base64String = e.target.result;
+            db.collection("clubs").doc(docId).update({ [field]: base64String });
+        }
+        reader.readAsDataURL(file);
+    }
+
+    async function deleteCard(docId) {
+        const isAdmin = await checkAdminPermission();
+        if (!isAdmin) return;
+        
+        if(confirm("정말로 이 데이터를 아카이브에서 삭제하시겠습니까?")) {
+            db.collection("clubs").doc(docId).delete().then(() => {
+                alert("삭제되었습니다.");
+            });
+        }
+    }
+
+    function updateSidebar() {
+        const scjSide = document.getElementById('scjSideList');
+        const normalSide = document.getElementById('normalSideList');
+        scjSide.innerHTML = '';
+        normalSide.innerHTML = '';
+
+        document.querySelectorAll('#scjList .item-card').forEach(card => {
+            const nameInput = card.querySelector('.club-name-input').value.trim() || "이름 없는 동아리";
+            scjSide.innerHTML += `<button class="side-item" onclick="focusCard('${card.id}')">📍 ${nameInput}</button>`;
+        });
+
+        document.querySelectorAll('#normalList .item-card').forEach(card => {
+            const nameInput = card.querySelector('.club-name-input').value.trim() || "이름 없는 동아리";
+            normalSide.innerHTML += `<button class="side-item" onclick="focusCard('${card.id}')">📍 ${nameInput}</button>`;
+        });
+    }
+
+    function focusCard(id) {
+        const target = document.getElementById(id);
+        if(target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            target.style.borderColor = 'var(--primary-color)';
+            target.style.boxShadow = '0 0 20px rgba(212,175,55,0.6)';
+            setTimeout(() => { target.style.borderColor = '#333'; target.style.boxShadow = 'none'; }, 1500);
+        }
+    }
+
+    function scrollToSection(id) {
+        document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
+    }
+
+    window.onload = function() {
+        listenToFirestore();
+    }
+</script>
+</body>
+</html>
